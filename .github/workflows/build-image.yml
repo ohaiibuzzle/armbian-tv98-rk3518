@@ -5,7 +5,7 @@ on:
     inputs:
       armbian_ref:
         description: armbian/build commit, tag or branch
-        default: a7d6467ca230bc5c0f1ad5d3c55ff64d064bcb08
+        default: main
       release:
         description: Debian/Ubuntu release
         default: trixie
@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ARMBIAN_REF: ${{ inputs.armbian_ref || 'a7d6467ca230bc5c0f1ad5d3c55ff64d064bcb08' }}
+  ARMBIAN_REF: ${{ inputs.armbian_ref || 'main' }}
   RELEASE: ${{ inputs.release || 'trixie' }}
 
 jobs:
