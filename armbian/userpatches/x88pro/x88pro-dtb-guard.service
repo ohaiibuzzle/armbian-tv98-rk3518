@@ -1,0 +1,6 @@
+[Unit]
+Description=Keep the Hugsun X88PRO DTB in /boot/dtb/rockchip
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/x88pro-dtb-guard

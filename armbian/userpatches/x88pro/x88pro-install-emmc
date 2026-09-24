@@ -1,0 +1,85 @@
+#!/bin/bash
+# Install the running Armbian system (booted from SD) onto the internal eMMC of the
+# Hugsun X88PRO RK3518 box, with the board's own loader:
+#   sector 64     factory idbloader (DDR v1.13 DDR4 + Rockchip SPL v1.06)
+#   sector 16384  mainline U-Boot u-boot.itb (BL31 v1.21)
+#   sector 32768+ ext4 rootfs (GPT partition 1)
+# Do NOT use armbian-install on this board: it writes Armbian's stock rk3528 loader,
+# whose DDR blob / BL31 do not boot the RK3518.
+set -euo pipefail
+
+LOADER_DIR=/usr/lib/x88pro-loader
+IDB="${LOADER_DIR}/factory_idbloader_x88pro.bin"
+ITB="${LOADER_DIR}/u-boot.itb"
+MNT=/mnt/x88pro-emmc
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+[[ $EUID -eq 0 ]] || die "run as root"
+[[ -f $IDB && -f $ITB ]] || die "loader files missing in ${LOADER_DIR}"
+for t in sgdisk rsync mkfs.ext4 blkid partprobe; do command -v "$t" >/dev/null || die "$t not installed"; done
+
+# Find the eMMC: the mmc block device whose type is MMC and that has boot partitions.
+EMMC=""
+for d in /sys/block/mmcblk[0-9]; do
+	n=$(basename "$d")
+	if [[ $(cat "$d/device/type" 2>/dev/null) == "MMC" && -e /dev/${n}boot0 ]]; then EMMC=/dev/$n; fi
+done
+[[ -n $EMMC ]] || die "eMMC not found"
+
+ROOTSRC=$(findmnt -no SOURCE /)
+[[ $ROOTSRC != ${EMMC}* ]] || die "the system is already running from ${EMMC}; boot from SD to install"
+
+echo "Target eMMC : ${EMMC} ($(lsblk -dno SIZE "$EMMC"))"
+echo "Running from: ${ROOTSRC}"
+echo
+echo "This ERASES everything on ${EMMC} (Android included) and installs this system."
+read -r -p "Type YES to continue: " ans
+[[ $ans == "YES" ]] || die "aborted"
+
+umount "${EMMC}"p* 2>/dev/null || true
+
+echo ">> Partitioning ${EMMC} (rootfs from sector 32768; loader area 64..32767 untouched)"
+sgdisk -Z "$EMMC" >/dev/null
+sgdisk -o -n 1:32768:0 -t 1:8300 -c 1:rootfs "$EMMC"
+partprobe "$EMMC"; udevadm settle
+PART=${EMMC}p1
+
+echo ">> Creating ext4 on ${PART}"
+mkfs.ext4 -F -q -L armbi_root "$PART"
+UUID=$(blkid -s UUID -o value "$PART")
+
+echo ">> Copying system"
+mkdir -p "$MNT"
+mount "$PART" "$MNT"
+rsync -aAXH --info=progress2 \
+	--exclude={"/dev/*","/proc/*","/sys/*","/run/*","/tmp/*","/mnt/*","/media/*","/lost+found","/var/swap"} / "$MNT"/
+
+echo ">> Pointing fstab and armbianEnv.txt at UUID=${UUID}"
+OLD_UUID=$(blkid -s UUID -o value "$ROOTSRC")
+sed -i "s/${OLD_UUID}/${UUID}/g" "$MNT/etc/fstab"
+if grep -q '^rootdev=' "$MNT/boot/armbianEnv.txt"; then
+	sed -i "s|^rootdev=.*|rootdev=UUID=${UUID}|" "$MNT/boot/armbianEnv.txt"
+else
+	echo "rootdev=UUID=${UUID}" >> "$MNT/boot/armbianEnv.txt"
+fi
+sync
+umount "$MNT"
+
+write_verify() { # file sector
+	local f=$1 s=$2 sz
+	sz=$(stat -c %s "$f")
+	dd if="$f" of="$EMMC" bs=512 seek="$s" conv=notrunc,fsync status=none
+	echo 3 > /proc/sys/vm/drop_caches
+	cmp -n "$sz" "$f" <(dd if="$EMMC" bs=512 skip="$s" count=$(((sz + 511) / 512)) iflag=direct status=none) \
+		|| die "verify failed for $(basename "$f") at sector $s"
+	echo "   $(basename "$f") @ sector $s verified"
+}
+
+echo ">> Writing loader"
+write_verify "$IDB" 64
+write_verify "$ITB" 16384
+sync
+
+echo
+echo "Done. Power off, REMOVE the SD card, and power on to boot from eMMC."

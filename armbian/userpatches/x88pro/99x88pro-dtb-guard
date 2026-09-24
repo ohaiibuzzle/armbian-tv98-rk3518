@@ -1,0 +1,2 @@
+// Put rk3518-hugsun-x88pro.dtb back into /boot/dtb/rockchip/ after every dpkg run.
+DPkg::Post-Invoke { "if [ -x /usr/local/sbin/x88pro-dtb-guard ]; then /usr/local/sbin/x88pro-dtb-guard || true; fi"; };

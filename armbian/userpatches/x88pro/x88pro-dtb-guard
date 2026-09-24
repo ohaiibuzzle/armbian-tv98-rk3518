@@ -1,0 +1,44 @@
+#!/bin/sh
+# Keep this board's DTB where boot.scr loads it (/boot/dtb/rockchip/, via fdtfile).
+# Only this project's kernel builds contain rk3518-hugsun-x88pro.dtb; an official Armbian
+# linux-dtb-vendor-rk35xx upgrade repoints /boot/dtb to a directory without it, and the box
+# no longer boots. Runs after every dpkg invocation (apt hook) and hourly (systemd timer).
+#
+#   DTB missing                                   -> restore the master copy
+#   DTB is the unmodified file of a *newer* version
+#   of the package that ships it (our own builds) -> adopt it as the new master
+#   anything else that differs from the master    -> restore the master copy
+#
+# To change the DTB by hand, replace $MASTER; the guard installs it.
+set -u
+NAME=rk3518-hugsun-x88pro.dtb
+STATE=/usr/lib/x88pro
+MASTER=$STATE/$NAME
+PKGVER=$STATE/$NAME.pkgver
+TARGET=/boot/dtb/rockchip/$NAME
+
+log() { logger -t x88pro-dtb-guard "$*" 2>/dev/null; echo "x88pro-dtb-guard: $*"; }
+
+[ -f "$MASTER" ] || exit 0
+
+if [ -f "$TARGET" ]; then
+	cmp -s "$MASTER" "$TARGET" && exit 0
+
+	real=$(readlink -f "$TARGET")
+	pkg=$(dpkg -S "$real" 2>/dev/null | cut -d: -f1)
+	if [ -n "$pkg" ]; then
+		ver=$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)
+		want=$(grep " ${real#/}\$" "/var/lib/dpkg/info/$pkg.md5sums" 2>/dev/null | cut -d' ' -f1)
+		have=$(md5sum "$TARGET" | cut -d' ' -f1)
+		if [ -n "$want" ] && [ "$want" = "$have" ] && [ "$ver" != "$(cat "$PKGVER" 2>/dev/null)" ]; then
+			cp "$TARGET" "$MASTER.tmp" && mv "$MASTER.tmp" "$MASTER" && echo "$ver" > "$PKGVER"
+			log "adopted $real from $pkg $ver as new master"
+			exit 0
+		fi
+	fi
+fi
+
+mkdir -p "$(dirname "$TARGET")"
+cp "$MASTER" "$TARGET.tmp" && mv "$TARGET.tmp" "$TARGET" && sync
+log "restored $TARGET from $MASTER"
+exit 0

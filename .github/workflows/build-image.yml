@@ -1,0 +1,99 @@
+name: Build SD card image
+
+# Builds the Armbian SD card image for the Hugsun X88PRO (RK3518) from armbian/userpatches.
+# The loader (factory idbloader + mainline u-boot.itb) is prebuilt and committed in
+# armbian/userpatches/x88pro; see u-boot/build.sh to regenerate u-boot.itb.
+
+on:
+  workflow_dispatch:
+    inputs:
+      armbian_ref:
+        description: armbian/build commit, tag or branch
+        default: a7d6467ca230bc5c0f1ad5d3c55ff64d064bcb08
+      release:
+        description: Debian/Ubuntu release
+        default: trixie
+  push:
+    tags: ["v*"]
+    paths-ignore: ["**.md"]
+
+permissions:
+  contents: write # attach images to a Release on tag builds
+
+concurrency:
+  group: build-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARMBIAN_REF: ${{ inputs.armbian_ref || 'a7d6467ca230bc5c0f1ad5d3c55ff64d064bcb08' }}
+  RELEASE: ${{ inputs.release || 'trixie' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Free disk space
+        # A vendor kernel build needs ~40 GB; a stock runner has ~20 GB free.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost /usr/local/.ghcup /usr/share/swift /usr/local/share/powershell
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - name: Check out Armbian build framework
+        uses: actions/checkout@v4
+        with:
+          repository: armbian/build
+          ref: ${{ env.ARMBIAN_REF }}
+          path: armbian-build
+
+      - name: Add userpatches
+        run: cp -a armbian/userpatches/. armbian-build/userpatches/
+
+      - name: Build image
+        working-directory: armbian-build
+        run: |
+          ./compile.sh build \
+            BOARD=hugsun-x88pro BRANCH=vendor RELEASE="${RELEASE}" \
+            BUILD_MINIMAL=yes BUILD_DESKTOP=no KERNEL_CONFIGURE=no KERNEL_GIT=shallow \
+            COMPRESS_OUTPUTIMAGE=sha,xz SHARE_LOG=no
+
+      - name: Check loader in image
+        working-directory: armbian-build/output/images
+        run: |
+          img=$(ls *.img.xz)
+          xz -dc "$img" | head -c $((16384 * 512 + $(stat -c %s ../../userpatches/x88pro/u-boot.itb))) > head.bin
+          cmp -n "$(stat -c %s ../../userpatches/x88pro/factory_idbloader_x88pro.bin)" \
+            ../../userpatches/x88pro/factory_idbloader_x88pro.bin <(tail -c +$((64 * 512 + 1)) head.bin)
+          cmp ../../userpatches/x88pro/u-boot.itb <(tail -c +$((16384 * 512 + 1)) head.bin)
+          rm head.bin
+          echo "factory idbloader @64 and u-boot.itb @16384 OK"
+
+      - name: Upload image
+        uses: actions/upload-artifact@v4
+        with:
+          name: armbian-hugsun-x88pro-${{ env.RELEASE }}
+          path: |
+            armbian-build/output/images/*.img.xz
+            armbian-build/output/images/*.img.xz.sha
+            armbian-build/output/images/*.img.txt
+          compression-level: 0 # already xz
+          retention-days: 30
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            armbian-build/output/images/*.img.xz
+            armbian-build/output/images/*.img.xz.sha
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: armbian-build/output/logs/

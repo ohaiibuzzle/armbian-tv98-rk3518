@@ -1,0 +1,398 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Hugsun X88PRO DDR4 V10 (RK3518) Android TV box, sold as "TV98".
+ *
+ * Linux DT for the Rockchip vendor 6.1 kernel. Based on the RK3518 EVB1
+ * DDR4 reference design; every board-specific pin below is taken from the
+ * stock Android DT (rk3518_x88pro_ddr4_v10, dumped from /proc/device-tree).
+ */
+
+/dts-v1/;
+
+#include "rk3518.dtsi"
+#include "rk3518-evb.dtsi"
+#include "rk3528-linux.dtsi"
+
+/ {
+	model = "Hugsun X88PRO DDR4 V10 (RK3518)";
+	compatible = "hugsun,x88pro-ddr4-v10", "rockchip,rk3518", "rockchip,rk3528";
+
+	/* Console comes from armbianEnv.txt (ttyFIQ0); uart2 belongs to Bluetooth. */
+	/delete-node/ chosen;
+
+	aliases {
+		mmc0 = &sdhci;
+		mmc1 = &sdmmc;
+		mmc2 = &sdio1;
+	};
+
+	/*
+	 * The EVB OTG VBUS switch sits on gpio4 PC1, which is the green power
+	 * LED on this board. The stock DT feeds the OTG port from vcc5v0_host.
+	 */
+	/delete-node/ vcc5v0-otg-regulator;
+
+	leds {
+		compatible = "gpio-leds";
+
+		led-power-green {
+			label = "green:power";
+			gpios = <&gpio4 RK_PC1 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "default-on";
+			default-state = "on";
+		};
+
+		led-power-red {
+			label = "red:power";
+			gpios = <&gpio4 RK_PB3 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
+
+		led-net-green {
+			label = "green:net";
+			gpios = <&gpio4 RK_PC0 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
+
+		led-net-red {
+			label = "red:net";
+			gpios = <&gpio4 RK_PB5 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
+
+		led-ir {
+			label = "ir";
+			gpios = <&gpio4 RK_PB7 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
+	};
+
+	/* WIFI_REG_ON is gpio3 PB2; the stock DT has no 32k clock output for the module. */
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h>;
+		post-power-on-delay-ms = <200>;
+		reset-gpios = <&gpio3 RK_PB2 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+
+	wireless_wlan: wireless-wlan {
+		compatible = "wlan-platdata";
+		rockchip,grf = <&grf>;
+		/* Stock DT leaves this empty so the driver autodetects the SDIO module. */
+		wifi_chip_type = "";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_host_wake_irq>;
+		WIFI,host_wake_irq = <&gpio3 RK_PB3 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	wireless_bluetooth: wireless-bluetooth {
+		compatible = "bluetooth-platdata";
+		uart_rts_gpios = <&gpio3 RK_PA2 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default", "rts_gpio";
+		pinctrl-0 = <&uart2m0_rtsn>;
+		pinctrl-1 = <&uart2m0_gpios>;
+		BT,reset_gpio = <&gpio3 RK_PC2 GPIO_ACTIVE_HIGH>;
+		BT,wake_host_irq = <&gpio3 RK_PC1 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+};
+
+&vcc5v0_host {
+	gpio = <&gpio4 RK_PB4 GPIO_ACTIVE_HIGH>;
+};
+
+&vcc5v0_host_en {
+	rockchip,pins = <4 RK_PB4 RK_FUNC_GPIO &pcfg_pull_none>;
+};
+
+&u2phy_otg {
+	/delete-property/ vbus-supply;
+	phy-supply = <&vcc5v0_host>;
+};
+
+&u2phy_host {
+	phy-supply = <&vcc5v0_host>;
+};
+
+&gmac0 {
+	status = "okay";
+};
+
+/* eMMC: the stock DT runs HS200 capped at 50 MHz; HS400 is not used on this board. */
+&sdhci {
+	/delete-property/ mmc-hs400-1_8v;
+	/delete-property/ mmc-hs400-enhanced-strobe;
+	mmc-hs200-1_8v;
+	fixed-emmc-driver-type = <4>;
+	max-frequency = <50000000>;
+};
+
+/*
+ * SD: the stock DT runs high-speed at 3.3 V only. UHS (inherited from the EVB)
+ * makes the card switch to 1.8 V signalling, which fails here with command
+ * timeouts, so drop the UHS modes.
+ */
+&sdmmc {
+	/delete-property/ sd-uhs-sdr12;
+	/delete-property/ sd-uhs-sdr25;
+	/delete-property/ sd-uhs-sdr50;
+	/delete-property/ sd-uhs-sdr104;
+	status = "okay";
+};
+
+&sdio1 {
+	max-frequency = <150000000>;
+	no-sd;
+	no-mmc;
+	supports-sdio;
+	bus-width = <4>;
+	disable-wp;
+	cap-sd-highspeed;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	non-removable;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdio1_bus4 &sdio1_cmd &sdio1_clk>;
+	sd-uhs-sdr104;
+	status = "okay";
+};
+
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2m0_xfer &uart2m0_ctsn>;
+	status = "okay";
+};
+
+/* Remote control keymaps from the stock DT (in addition to the EVB ones). */
+&pwm3 {
+	ir_key6 {
+		rockchip,usercode = <0xfe01>;
+		rockchip,key_table =
+			<0xec	232>,
+			<0xe6	158>,
+			<0xe9	103>,
+			<0xe5	108>,
+			<0xae	105>,
+			<0xaf	106>,
+			<0xee	102>,
+			<0xe7	115>,
+			<0xef	114>,
+			<0xbf	116>,
+			<0xbe	113>,
+			<0xb3	139>,
+			<0xff	388>,
+			<0xb1	2>,
+			<0xf2	3>,
+			<0xf3	4>,
+			<0xb5	5>,
+			<0xf6	6>,
+			<0xf7	7>,
+			<0xb9	8>,
+			<0xfa	9>,
+			<0xfb	10>,
+			<0xfe	11>,
+			<0xbb	189>,
+			<0xaa	168>,
+			<0xa5	164>,
+			<0xad	128>,
+			<0xab	208>,
+			<0xbd	14>,
+			<0xbc	141>,
+			<0xf0	184>;
+	};
+
+	ir_key12 {
+		rockchip,usercode = <0x7f80>;
+		rockchip,key_table =
+			<0xec	232>,
+			<0xd8	158>,
+			<0xc7	103>,
+			<0xbf	108>,
+			<0xc8	105>,
+			<0xc6	106>,
+			<0x8c	102>,
+			<0x78	115>,
+			<0x76	114>,
+			<0x7e	116>,
+			<0xed	116>,
+			<0x7c	139>,
+			<0xb7	388>;
+	};
+
+	ir_key15 {
+		rockchip,usercode = <0xdf00>;
+		rockchip,key_table =
+			<0xe3	116>,
+			<0x0e	63>,
+			<0x0d	66>,
+			<0xef	68>,
+			<0x0c	62>,
+			<0x0b	69>,
+			<0x99	248>,
+			<0xfc	102>,
+			<0xf5	158>,
+			<0xbe	227>,
+			<0xf3	11>,
+			<0xe5	103>,
+			<0xb8	105>,
+			<0xf9	232>,
+			<0xf8	106>,
+			<0xb7	108>,
+			<0xbd	388>,
+			<0xe7	139>,
+			<0xf7	113>,
+			<0xb0	114>,
+			<0xb4	115>,
+			<0xa3	114>,
+			<0xa2	115>,
+			<0xa1	141>,
+			<0xfe	104>,
+			<0xa0	109>;
+	};
+
+	ir_key14 {
+		rockchip,usercode = <0x707>;
+		rockchip,key_table =
+			<0xfd	116>,
+			<0xc1	164>,
+			<0xec	388>,
+			<0x9f	103>,
+			<0x9a	105>,
+			<0x97	232>,
+			<0x9d	106>,
+			<0x9e	108>,
+			<0xd2	102>,
+			<0xe5	139>,
+			<0xed	168>,
+			<0xef	208>,
+			<0x77	231>,
+			<0xf8	115>,
+			<0xf4	114>,
+			<0xa3	14>,
+			<0xf0	113>;
+	};
+
+	ir_key13 {
+		rockchip,usercode = <0x4040>;
+		rockchip,key_table =
+			<0xe5	102>,
+			<0xbd	158>,
+			<0xba	139>,
+			<0xf2	232>,
+			<0xf4	103>,
+			<0xf1	108>,
+			<0xef	105>,
+			<0xee	106>,
+			<0xe3	114>,
+			<0xea	115>,
+			<0xe8	114>,
+			<0xe7	115>,
+			<0xbc	113>,
+			<0xb2	116>,
+			<0x4d	116>,
+			<0xb8	388>,
+			<0xbb	388>,
+			<0xac	183>,
+			<0xa4	184>,
+			<0xa8	185>,
+			<0xab	186>,
+			<0xe0	123>,
+			<0xe1	122>,
+			<0xfe	2>,
+			<0xfd	3>,
+			<0xfc	4>,
+			<0xfb	5>,
+			<0xfa	6>,
+			<0xf9	7>,
+			<0xf8	8>,
+			<0xf7	9>,
+			<0xf6	10>,
+			<0xff	11>,
+			<0xf0	57>,
+			<0xf3	14>;
+	};
+
+	ir_key5 {
+		rockchip,usercode = <0xf708>;
+		rockchip,key_table =
+			<0xf5	113>,
+			<0xfc	141>,
+			<0xf4	116>,
+			<0x8c	183>,
+			<0x8b	184>,
+			<0x8a	185>,
+			<0x89	186>,
+			<0xfa	187>,
+			<0xbd	102>,
+			<0xed	103>,
+			<0xea	105>,
+			<0xe1	232>,
+			<0xeb	106>,
+			<0xbe	158>,
+			<0xec	108>,
+			<0xe8	139>,
+			<0xf1	115>,
+			<0xef	104>,
+			<0xe3	114>,
+			<0xee	109>,
+			<0x8f	388>,
+			<0x8e	128>;
+	};
+
+	ir_key4 {
+		rockchip,usercode = <0xf709>;
+		rockchip,key_table =
+			<0xf5	116>,
+			<0xdd	248>,
+			<0xff	103>,
+			<0xfe	108>,
+			<0xfd	106>,
+			<0xfc	105>,
+			<0xe0	232>,
+			<0xf3	102>,
+			<0xb5	388>,
+			<0xe3	158>,
+			<0xa7	115>,
+			<0xa2	114>,
+			<0xe5	139>,
+			<0x7f	141>,
+			<0xe4	67>,
+			<0xf2	113>,
+			<0xae	104>,
+			<0xad	109>,
+			<0x8d	63>,
+			<0x79	66>,
+			<0x8c	62>,
+			<0x8e	69>;
+	};
+
+	ir_key16 {
+		rockchip,usercode = <0x807f>;
+		rockchip,key_table =
+			<0x7e	116>;
+	};
+};
+
+&pinctrl {
+	sdio-pwrseq {
+		wifi_enable_h: wifi-enable-h {
+			rockchip,pins = <3 RK_PB2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	wireless-wlan {
+		wifi_host_wake_irq: wifi-host-wake-irq {
+			rockchip,pins = <3 RK_PB3 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+
+	wireless-bluetooth {
+		uart2m0_gpios: uart2m0-gpios {
+			rockchip,pins = <3 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};

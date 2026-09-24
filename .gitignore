@@ -1,0 +1,4 @@
+# Built images come from CI (Actions artifacts / Releases); keep them out of git.
+images/*.img
+images/*.img.xz
+.DS_Store
