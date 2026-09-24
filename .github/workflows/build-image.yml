@@ -1,9 +1,5 @@
 name: Build SD card image
 
-# Builds the Armbian SD card image for the Hugsun X88PRO (RK3518) from armbian/userpatches.
-# The loader (factory idbloader + mainline u-boot.itb) is prebuilt and committed in
-# armbian/userpatches/x88pro; see u-boot/build.sh to regenerate u-boot.itb.
-
 on:
   workflow_dispatch:
     inputs:
@@ -52,6 +48,11 @@ jobs:
 
       - name: Add userpatches
         run: cp -a armbian/userpatches/. armbian-build/userpatches/
+
+      - name: Register qemu binfmt handlers
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64,arm
 
       - name: Build image
         working-directory: armbian-build
