@@ -96,7 +96,12 @@
 		pinctrl-1 = <&uart2m0_gpios>;
 		BT,reset_gpio = <&gpio3 RK_PC2 GPIO_ACTIVE_HIGH>;
 		BT,wake_host_irq = <&gpio3 RK_PC1 GPIO_ACTIVE_HIGH>;
-		status = "okay";
+		/*
+		 * BT runs over SDIO (swtbt4l/skwbt), not this UART rfkill driver. rfkill-bt
+		 * registers a persistent, blocked "bt_default" switch, which the rfkill core
+		 * propagates to every bluetooth switch, so hci0 would come up blocked.
+		 */
+		status = "disabled"; 
 	};
 };
 

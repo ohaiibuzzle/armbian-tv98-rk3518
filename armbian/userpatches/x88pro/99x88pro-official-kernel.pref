@@ -1,6 +1,3 @@
-# Follow Armbian's official vendor kernel and firmware, even when the version baked into
-# this image (built as "…-trunk") compares newer. Priority > 1000 permits that downgrade.
-# The board DTB is not in the official packages; x88pro-dtb-guard puts it back after each update.
 Package: linux-image-vendor-rk35xx linux-dtb-vendor-rk35xx linux-headers-vendor-rk35xx armbian-firmware armbian-firmware-full
 Pin: origin apt.armbian.com
 Pin-Priority: 1001

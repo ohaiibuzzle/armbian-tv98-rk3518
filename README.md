@@ -1,8 +1,7 @@
 # Armbian on Hugsun X88PRO RK3518 box ("TV98")
 
 **Current state:**
-- **Working:** Ethernet, HDMI console, SD, eMMC, USB (using armbian vendor 6.1 kernel)
-- **Not working:** Wi-Fi/BT, probably fixable, but I am too lazy. See `wifi/README.md`.
+- **Working:** Ethernet, HDMI console, SD, eMMC, USB, Wi-Fi, Bluetooth (using armbian vendor 6.1 kernel). See `wifi/README.md`.
 
 ## eMMC content
 
@@ -26,15 +25,14 @@ Public rkbin DDR blobs and Armbian's own rk3528 loader (BL31 v1.17) are **not** 
 | `images/` | Local build output |
 | `.github/workflows/` | CI image build |
 | `recovery/` | Maskrom loader, restore-SD image, stock U-Boot (see Recovery) |
-| `wifi/` | SeekWave SWT6621S notes |
+| `wifi/` | SeekWave SWT6621S notes. The driver itself is https://github.com/ohaiibuzzle/swt6621s, built into the image as `swt6621s-dkms` (Wi-Fi + Bluetooth). |
 
 ## CI build (GitHub Actions)
 
-`.github/workflows/build-image.yml` builds the SD card image on GitHub's runners, from `armbian/userpatches` and a pinned `armbian/build` commit. Make `linux/` the repository root.
-- Run it from the Actions tab (**Build SD card image → Run workflow**). You can override the Armbian ref and the release.
+`.github/workflows/build-image.yml` builds the SD card image from `armbian/userpatches`, a pinned `armbian/build` ref and the Wi-Fi/BT driver's `swt6621s-dkms` package. Make `linux/` the repository root. Run it from the Actions tab (**Build SD card image → Run workflow**). 
 - Or push a `v*` tag, which also attaches the image to a GitHub Release.
 - The job checks that the factory idbloader (sector 64) and `u-boot.itb` (sector 16384) are in the image, then uploads the image as an artifact.
-- A full build takes roughly 1 to 1.5 h on a 4-core runner, since the vendor kernel is compiled from scratch.
+- The vendor kernel is compiled from source
 
 ## Brick prevention
 

@@ -2,3 +2,5 @@
 images/*.img
 images/*.img.xz
 .DS_Store
+# wifi builds
+armbian/userpatches/x88pro/*.deb

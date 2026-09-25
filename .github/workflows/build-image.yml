@@ -4,11 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       armbian_ref:
-        description: armbian/build commit, tag or branch
-        default: main
+        description: armbian/build commit, tag or branch (a vX.Y.Z tag also sets the image version)
+        default: v26.5.1
       release:
         description: Debian/Ubuntu release
         default: trixie
+      swt6621s_ref:
+        description: ohaiibuzzle/swt6621s commit, tag or branch for the Wi-Fi/BT DKMS package
+        default: dkms
   push:
     tags: ["v*"]
     paths-ignore: ["**.md"]
@@ -21,19 +24,28 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ARMBIAN_REF: ${{ inputs.armbian_ref || 'main' }}
+  ARMBIAN_REF: ${{ inputs.armbian_ref || 'v26.5.1' }}
+  SWT6621S_REF: ${{ inputs.swt6621s_ref || 'dkms' }}
   RELEASE: ${{ inputs.release || 'trixie' }}
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    # Native arm64: the rootfs chroot and the DKMS build run without qemu emulation.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 300
     steps:
       - name: Free disk space
         # A vendor kernel build needs ~40 GB; a stock runner has ~20 GB free.
+        uses: endersonmenezes/free-disk-space@v4
+        with:
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_tool_cache: true
+          remove_folders: "/usr/share/swift /usr/local/share/boost /usr/local/share/powershell /opt/hostedtoolcache/CodeQL"
+
+      - name: Prune Docker images
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
-            /usr/local/share/boost /usr/local/.ghcup /usr/share/swift /usr/local/share/powershell
           sudo docker image prune --all --force || true
           df -h /
 
@@ -49,18 +61,31 @@ jobs:
       - name: Add userpatches
         run: cp -a armbian/userpatches/. armbian-build/userpatches/
 
-      - name: Register qemu binfmt handlers
-        uses: docker/setup-qemu-action@v3
+      - name: Check out Wi-Fi driver
+        uses: actions/checkout@v4
         with:
-          platforms: arm64,arm
+          repository: ohaiibuzzle/swt6621s
+          ref: ${{ env.SWT6621S_REF }}
+          path: swt6621s
+
+      - name: Build Wi-Fi DKMS package
+        working-directory: swt6621s
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends debhelper build-essential
+          dpkg-buildpackage -us -uc -b
+          cp -v ../swt6621s-dkms_*.deb ../armbian-build/userpatches/x88pro/
 
       - name: Build image
         working-directory: armbian-build
         run: |
+          # A release tag (v26.5.1) names the image 26.5.1 instead of the tree's "-trunk" VERSION.
+          revision=()
+          [[ "${ARMBIAN_REF}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] && revision=("REVISION=${BASH_REMATCH[1]}")
           ./compile.sh build \
             BOARD=hugsun-x88pro BRANCH=vendor RELEASE="${RELEASE}" \
             BUILD_MINIMAL=yes BUILD_DESKTOP=no KERNEL_CONFIGURE=no KERNEL_GIT=shallow \
-            COMPRESS_OUTPUTIMAGE=sha,xz SHARE_LOG=no
+            COMPRESS_OUTPUTIMAGE=sha,xz SHARE_LOG=no "${revision[@]}"
 
       - name: Check loader in image
         working-directory: armbian-build/output/images
