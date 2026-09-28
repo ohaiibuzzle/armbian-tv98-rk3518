@@ -15,7 +15,9 @@ Public rkbin DDR blobs and Armbian's own rk3528 loader (BL31 v1.17) are **not** 
 
 **Do NOT use `armbian-install`**: use `x88pro-install-emmc`, which is included in the image. You will brick your box if you don't since it will load a significantly older loader.
 
-## lLayout
+However, as of Sep 27th, it is **no longer recommended** that you ever install Armbian to eMMC. I discovered that the eMCP chips used in these devices have **significant** wear (70% lifecycle used), likely due to the chips being pulled from older mobile devices. If this flash chip fail, and the boot ROM can't find its initial loader, you may not be able to easily boot into Linux running on an SD card anymore. As such, you are recommended to blkdiscard the eMMC, restore the idbloader and mainline u-boot, and then use external storage **exclusively** for Armbian to avoid flash wear.
+
+## Layout
 
 | Path | What |
 |---|---|
